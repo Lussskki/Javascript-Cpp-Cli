@@ -14,41 +14,27 @@
 #include <algorithm>
 #include <map>
 #include <tuple>
+#include <string>
+#include <fstream>
+#include <sstream>
 
+// Window dimensions
 const unsigned int WIDTH = 800;
 const unsigned int HEIGHT = 600;
 
-// Vertex shader
-const char* vertexShaderSrc = R"(
-#version 330 core
-layout(location = 0) in vec3 aPos;
-layout(location = 1) in vec2 aTexCoord;
-
-out vec2 TexCoord;
-
-uniform mat4 model;
-uniform mat4 view;
-uniform mat4 projection;
-
-void main() {
-    gl_Position = projection * view * model * vec4(aPos,1.0);
-    TexCoord = aTexCoord;
+// --- Helper to load shader files ---
+std::string loadShaderSource(const std::string& filepath) {
+    std::ifstream file(filepath);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open shader file: " << filepath << std::endl;
+        return "";
+    }
+    std::stringstream ss;
+    ss << file.rdbuf();
+    return ss.str();
 }
-)";
 
-// Fragment shader
-const char* fragmentShaderSrc = R"(
-#version 330 core
-out vec4 FragColor;
-in vec2 TexCoord;
-
-uniform sampler2D texture_diffuse;
-
-void main() {
-    FragColor = texture(texture_diffuse, TexCoord);
-}
-)";
-
+// GLFW error callback
 void glfw_error_callback(int error, const char* description) {
     std::cerr << "GLFW Error: " << description << std::endl;
 }
@@ -57,9 +43,9 @@ int main() {
     glfwSetErrorCallback(glfw_error_callback);
     if (!glfwInit()) return -1;
 
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR,3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR,3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE,GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "Textured OBJ Viewer", nullptr, nullptr);
     if(!window){ glfwTerminate(); return -1; }
@@ -76,7 +62,7 @@ int main() {
     std::vector<tinyobj::material_t> materials;
     std::string err;
 
-    bool ret = tinyobj::LoadObj(&attrib,&shapes,&materials,&err,"assets/Cottage_FREE.obj","assets/");
+    bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &err, "assets/Cottage_FREE.obj", "assets/");
     if(!err.empty()) std::cerr << "TinyOBJLoader: " << err << std::endl;
     if(!ret){ std::cerr << "Failed to load OBJ!\n"; return -1; }
 
@@ -84,7 +70,6 @@ int main() {
     struct Vertex {
         glm::vec3 pos;
         glm::vec2 uv;
-
         bool operator<(const Vertex& other) const {
             return std::tie(pos.x,pos.y,pos.z,uv.x,uv.y) < std::tie(other.pos.x,other.pos.y,other.pos.z,other.uv.x,other.uv.y);
         }
@@ -175,7 +160,10 @@ int main() {
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
 
-    // --- Compile shaders ---
+    // --- Load shaders from files ---
+    std::string vertexShaderSrc   = loadShaderSource("src/shaders/home_shader.vert");
+    std::string fragmentShaderSrc = loadShaderSource("src/shaders/home_shader.frag");
+
     auto compileShader = [](GLenum type,const char* src){
         GLuint s = glCreateShader(type);
         glShaderSource(s,1,&src,nullptr);
@@ -185,8 +173,10 @@ int main() {
         if(!success){ glGetShaderInfoLog(s,512,NULL,info); std::cerr<<"Shader compile error: "<<info<<"\n"; }
         return s;
     };
-    GLuint vertexShader = compileShader(GL_VERTEX_SHADER,vertexShaderSrc);
-    GLuint fragmentShader = compileShader(GL_FRAGMENT_SHADER,fragmentShaderSrc);
+
+    GLuint vertexShader   = compileShader(GL_VERTEX_SHADER, vertexShaderSrc.c_str());
+    GLuint fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentShaderSrc.c_str());
+
     GLuint shaderProgram = glCreateProgram();
     glAttachShader(shaderProgram,vertexShader);
     glAttachShader(shaderProgram,fragmentShader);
@@ -228,6 +218,7 @@ int main() {
         glfwPollEvents();
     }
 
+    // --- Cleanup ---
     glDeleteVertexArrays(1,&VAO);
     glDeleteBuffers(1,&VBO);
     glDeleteBuffers(1,&EBO);
